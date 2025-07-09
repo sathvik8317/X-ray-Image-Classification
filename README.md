@@ -164,4 +164,4 @@ Feel free to fork this repository and submit pull requests for:
 
 ## License
 
-This project is released under the **MIT License**. See [LICENSE](LICENSE) for details.
+This project is released under the **Apache License**. See [LICENSE](LICENSE) for details.
