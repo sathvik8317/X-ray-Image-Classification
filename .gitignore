@@ -17,6 +17,8 @@ chest_xray/
 __pycache__/
 *.py[cod]
 .venv/
+*.egg-info/
+build/
 venv/
 .env
 

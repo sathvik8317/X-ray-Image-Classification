@@ -1,5 +1,1 @@
--r requirements.txt
-jupyter
-ruff
-pre-commit
-nbstripout
+-e .[dev]

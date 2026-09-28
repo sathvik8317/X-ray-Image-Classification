@@ -1,7 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xray-classifier"
+version = "0.1.0"
+description = "Chest X-ray pneumonia classification with a custom CNN and VGG16 transfer learning"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+dependencies = [
+  "tensorflow>=2.16",
+  "numpy",
+  "matplotlib",
+  "scikit-learn",
+  "kaggle",
+]
+
+[project.optional-dependencies]
+dev = ["jupyter", "ruff", "pre-commit", "nbstripout", "pytest"]
+
+[project.scripts]
+xray-train = "xray_classifier.train:main"
+xray-evaluate = "xray_classifier.evaluate:main"
+xray-predict = "xray_classifier.predict:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
 extend-include = ["*.ipynb"]
+
+[tool.ruff.lint]
+extend-select = ["I", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
 # Notebook sections re-import so each one can run on its own.
