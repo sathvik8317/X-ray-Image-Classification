@@ -1,6 +1,8 @@
 # Chest X‑Ray Pneumonia Classification
 
-Convolutional neural networks (CNNs) that classify chest X‑ray images as **Normal** (healthy) or **Pneumonia**. The code is a small Python package, `xray_classifier`, with command-line tools for training, evaluation, and prediction, plus a notebook that walks through the whole workflow.
+Convolutional neural networks (CNNs) that classify chest X‑ray images as **Normal** (healthy) or **Pneumonia**. The code is a small Python package, `xray_classifier`, with command-line tools for training, evaluation, and prediction, a notebook that walks through the whole workflow, and a web demo.
+
+> **Research and education only.** This project is not a medical device and must not be used to diagnose patients.
 
 ---
 
@@ -19,6 +21,7 @@ Convolutional neural networks (CNNs) that classify chest X‑ray images as **Nor
 
    * [Command Line](#command-line)
    * [Notebook](#notebook)
+   * [Demo App](#demo-app)
    * [Configuration](#configuration)
 6. [Results](#results)
 7. [Testing](#testing)
@@ -29,18 +32,26 @@ Convolutional neural networks (CNNs) that classify chest X‑ray images as **Nor
 
 ## About
 
-The project trains and compares two models on the public [Chest X‑Ray Pneumonia dataset](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia):
+The project trains and compares models on the public [Chest X‑Ray Pneumonia dataset](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia):
 
-* **Custom CNN**: three Conv2D + MaxPooling + Dropout blocks on 100x100 grayscale images.
-* **VGG16 transfer learning**: an ImageNet-pretrained VGG16 base (frozen) with a dense head, on 100x100 RGB images with random zoom augmentation. VGG16's ImageNet input preprocessing is built into the model.
+| Model (`--model`) | Input | Description |
+| --- | --- | --- |
+| `cnn` | 100x100 grayscale | Three Conv2D + MaxPooling + Dropout blocks, trained from scratch |
+| `vgg16` | 100x100 RGB | Frozen ImageNet VGG16 base with a dense head |
+| `efficientnetv2-b0` | 224x224 RGB | Frozen ImageNet EfficientNetV2-B0 base with a pooled linear head |
+| `convnext-tiny` | 224x224 RGB | Frozen ImageNet ConvNeXt-Tiny base with a pooled linear head |
 
-Features:
+Each pretrained model has its ImageNet input preprocessing built in, so every model takes images scaled to [0, 1].
 
-* A `tf.data` input pipeline that streams images from the `train/`, `val/`, and `test/` folders.
-* Training with early stopping, learning-rate reduction on plateau, and checkpointing of the best model (`.keras` format).
-* Evaluation with accuracy, precision/recall/F1, a confusion matrix, and an ROC curve with AUC.
-* Plots of training curves, confusion matrix, and ROC curve.
-* Single-image prediction using the same preprocessing as training.
+How training works:
+
+* **Validation split by patient.** The dataset's `val/` folder has only 16 images, too few to steer training. By default `train/` and `val/` are pooled and 15% is held out for validation, stratified by class and grouped by the patient ID in the filenames (`person123_...`, `IM-0115-...`), so no patient appears in both training and validation.
+* **Class weights.** The training set has about three PNEUMONIA images for every NORMAL one. The loss is weighted so both classes count equally.
+* **Callbacks.** Early stopping, learning-rate reduction on plateau, and a checkpoint of the best model (lowest validation loss) in `.keras` format.
+* **Calibrated threshold.** After training, the decision threshold that maximizes sensitivity + specificity on the validation split is saved next to the model as `<model>.json`. Evaluation and prediction use it automatically.
+* **Optional fine-tuning.** For pretrained models, a second phase can unfreeze the backbone's last stage and train it at a low learning rate. The checkpoint is only replaced if fine-tuning improves the validation loss.
+
+Evaluation reports accuracy, **sensitivity** (share of pneumonia cases caught), **specificity** (share of normal cases cleared), ROC AUC, a classification report, and a confusion matrix. **Grad-CAM** heatmaps show which image regions drive a prediction, to check that a model looks at the lungs rather than at shortcuts such as text markers or image borders.
 
 ## Project Structure
 
@@ -49,13 +60,17 @@ Features:
 ├── X_ray_Image_Classification.ipynb   # walkthrough notebook (Colab-ready)
 ├── src/xray_classifier/
 │   ├── config.py      # class names, image size, data and model paths
-│   ├── data.py        # tf.data pipeline and single-image loading
-│   ├── models.py      # custom CNN and VGG16 model builders
-│   ├── train.py       # training loop with callbacks (xray-train)
+│   ├── data.py        # file listing, patient-grouped split, tf.data pipeline
+│   ├── models.py      # model builders and fine-tuning (unfreeze last stage)
+│   ├── train.py       # training with callbacks and threshold calibration (xray-train)
+│   ├── thresholds.py  # choosing, saving, and loading decision thresholds
 │   ├── evaluate.py    # metrics on a data split (xray-evaluate)
 │   ├── predict.py     # single-image prediction (xray-predict)
-│   └── plots.py       # training curves, confusion matrix, ROC curve
-├── tests/             # pytest suite, runs on a small synthetic dataset
+│   ├── gradcam.py     # Grad-CAM heatmaps
+│   ├── plots.py       # training curves, confusion matrix, ROC curve, Grad-CAM figures
+│   └── app.py         # Gradio web demo (xray-app)
+├── tests/             # pytest suite, runs on small synthetic datasets
+├── .github/workflows/ # CI: pre-commit and pytest
 └── pyproject.toml     # package metadata, dependencies, tool config
 ```
 
@@ -63,6 +78,7 @@ Features:
 
 * **Python 3.10+**
 * A **Kaggle account** and API token, to download the dataset
+* A GPU is recommended for the pretrained models, especially at 224x224
 
 ## Project Setup
 
@@ -85,7 +101,7 @@ venv\Scripts\activate         # Windows
 pip install -r requirements.txt
 ```
 
-This installs `xray_classifier` in editable mode along with its dependencies (TensorFlow, NumPy, Matplotlib, scikit-learn, Kaggle), which are listed in `pyproject.toml`.
+This installs `xray_classifier` in editable mode along with its dependencies (TensorFlow, NumPy, Matplotlib, scikit-learn, Kaggle), which are listed in `pyproject.toml`. For the web demo, also run `pip install -e ".[app]"`.
 
 ### Download Dataset
 
@@ -129,32 +145,52 @@ Never commit `kaggle.json`, the dataset, or trained model files. They are listed
 
 ### Command Line
 
-Train a model. The best checkpoint (lowest validation loss) is saved to `models/<model>.keras`:
+Train a model. The best checkpoint is saved to `models/<model>.keras` and its threshold to `models/<model>.json`:
 
 ```bash
 xray-train --model cnn
 xray-train --model vgg16
+xray-train --model efficientnetv2-b0 --fine-tune-epochs 5
 ```
 
-Useful options: `--epochs` (default 10), `--batch-size` (default 4 for `cnn`, 32 for `vgg16`), `--augment/--no-augment` (default on for `vgg16` only), `--seed`, `--output`. Run `xray-train --help` for the full list.
+| Option | Default | Description |
+| --- | --- | --- |
+| `--epochs` | 10 | Epochs of the main (frozen-base) phase |
+| `--batch-size` | 4 for `cnn`, 32 otherwise | |
+| `--img-size` | 100 for `cnn`/`vgg16`, 224 otherwise | |
+| `--augment/--no-augment` | off for `cnn`, on otherwise | Random zoom augmentation |
+| `--val-fraction` | 0.15 | Share held out for validation, split by patient; `0` uses the provided 16-image `val/` folder |
+| `--class-weight/--no-class-weight` | on | Balance NORMAL and PNEUMONIA in the loss |
+| `--fine-tune-epochs` | 0 | Extra epochs training the backbone's last stage (pretrained models only) |
+| `--fine-tune-lr` | 1e-5 | Learning rate for fine-tuning |
+| `--seed` | none | Seed for reproducible runs |
 
-Evaluate a trained model on the test set, optionally saving the plots:
+Evaluate a trained model on the test set, optionally saving the plots. It warns if patients in the evaluated split also appear in `train/`:
 
 ```bash
 xray-evaluate models/vgg16.keras --plots-dir reports/
 ```
 
-Classify individual images:
+Classify individual images, optionally saving Grad-CAM heatmaps:
 
 ```bash
-xray-predict models/vgg16.keras path/to/image1.jpeg path/to/image2.jpeg
+xray-predict models/vgg16.keras path/to/image1.jpeg path/to/image2.jpeg --gradcam reports/gradcam/
 ```
 
-Each command is also available as `python -m xray_classifier.<train|evaluate|predict>`.
+Both use the threshold saved with the model unless `--threshold` is given. Each command is also available as `python -m xray_classifier.<train|evaluate|predict>`.
 
 ### Notebook
 
-Open `X_ray_Image_Classification.ipynb` in Jupyter or [Google Colab](https://colab.research.google.com/) and run the cells in order. It explores the data, then trains, evaluates, and compares both models. In Colab, the first cell clones this repository and installs the package; upload `kaggle.json` to the Colab working directory so the download cell can fetch the dataset.
+Open `X_ray_Image_Classification.ipynb` in Jupyter or [Google Colab](https://colab.research.google.com/) and run the cells in order. It explores the data, trains the custom CNN, VGG16, and EfficientNetV2-B0 (with fine-tuning), compares them on the test set, and shows Grad-CAM heatmaps. In Colab, the first cell clones this repository and installs the package; upload `kaggle.json` to the Colab working directory so the download cell can fetch the dataset.
+
+### Demo App
+
+A small web page to upload an X-ray and see the prediction and its Grad-CAM heatmap:
+
+```bash
+pip install -e ".[app]"
+xray-app models/vgg16.keras          # then open http://127.0.0.1:7860
+```
 
 ### Configuration
 
@@ -167,14 +203,14 @@ export XRAY_MODELS_DIR=/content/drive/MyDrive/models
 
 ## Results
 
-Recorded from the original Colab run of the notebook (10 epochs). That run predates the training callbacks, the `tf.data` pipeline, and two model fixes (a missing ReLU in the custom CNN, and missing ImageNet preprocessing for VGG16), so current code should do at least as well:
+Recorded from the original Colab run of the notebook (10 epochs):
 
 | Model | Validation accuracy (16 images) | Test accuracy (624 images) |
 | --- | --- | --- |
 | Custom CNN | 81.3% | 74.7% |
 | VGG16 transfer learning | 68.8% | 85.9% |
 
-The provided validation split has only 16 images, so validation accuracy swings widely between epochs; the test set is the more reliable measure. Rerun training to get current numbers, including precision, recall, and ROC AUC from `xray-evaluate`.
+These numbers predate the current training setup: the patient-grouped validation split, class weights, threshold calibration, callbacks, and two model fixes (a missing ReLU in the custom CNN, and missing ImageNet preprocessing for VGG16). They also report accuracy only, which hides the trade-off between catching pneumonia and clearing healthy patients on this imbalanced test set. Rerun training to get current numbers, including sensitivity, specificity, and ROC AUC from `xray-evaluate`.
 
 ## Testing
 
@@ -183,15 +219,15 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The tests build a small synthetic dataset, so they run in seconds and do not need the Kaggle data.
+The tests build small synthetic datasets, so they need neither the Kaggle data nor a GPU (about a minute and a half on a laptop CPU). GitHub Actions runs the pre-commit hooks and the test suite on Python 3.10 and 3.12 for every pull request.
 
 ## Contributing
 
 Feel free to fork this repository and submit pull requests for:
 
-* Additional model architectures (ResNet, EfficientNet).
-* Hyperparameter tuning scripts.
-* Deployment examples (Flask, FastAPI).
+* Hyperparameter tuning and comparisons of the models on the real data.
+* Evaluation on an external chest X-ray dataset, to check how well the models generalize beyond this one.
+* Additional architectures or test-time augmentation.
 
 ## License
 
