@@ -6,10 +6,22 @@ from keras import layers
 from .config import IMG_SIZE
 
 PRETRAINED_IMG_SIZE = 224
+FINE_TUNE_LEARNING_RATE = 1e-5
+
+# Layer-name prefixes of each backbone's last stage: the part unfrozen for fine-tuning.
+LAST_STAGE_PREFIXES = {
+    "vgg16": ("block5",),
+    "efficientnetv2-b0": ("block6", "top"),
+    "convnext_tiny": ("convnext_tiny_stage_3", "layer_normalization"),
+}
 
 
-def _compile(model: keras.Model) -> keras.Model:
-    model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
+def _compile(model: keras.Model, learning_rate: float = 1e-3) -> keras.Model:
+    model.compile(
+        loss="binary_crossentropy",
+        optimizer=keras.optimizers.Adam(learning_rate),
+        metrics=["accuracy"],
+    )
     return model
 
 
@@ -103,3 +115,19 @@ MODEL_BUILDERS = {
 def pretrained_base(model: keras.Model) -> keras.Model | None:
     """The nested pretrained backbone of a transfer model, or None for the custom CNN."""
     return next((layer for layer in model.layers if isinstance(layer, keras.Model)), None)
+
+
+def unfreeze_last_stage(
+    model: keras.Model, learning_rate: float = FINE_TUNE_LEARNING_RATE
+) -> keras.Model:
+    """Make the backbone's last stage trainable (BatchNorm stays frozen) and recompile."""
+    base = pretrained_base(model)
+    if base is None:
+        raise ValueError(f"{model.name} has no pretrained base to fine-tune")
+    prefixes = LAST_STAGE_PREFIXES[base.name]
+    base.trainable = True
+    for layer in base.layers:
+        layer.trainable = layer.name.startswith(prefixes) and not isinstance(
+            layer, layers.BatchNormalization
+        )
+    return _compile(model, learning_rate)

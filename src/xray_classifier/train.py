@@ -10,15 +10,21 @@ from sklearn.utils.class_weight import compute_class_weight
 from .config import DATA_DIR, MODELS_DIR
 from .data import make_dataset, train_val_files
 from .evaluate import Metrics, compute_metrics, predict_files
-from .models import MODEL_BUILDERS
+from .models import FINE_TUNE_LEARNING_RATE, MODEL_BUILDERS, unfreeze_last_stage
 from .thresholds import choose_threshold, save_threshold
 
 
-def make_callbacks(checkpoint_path: str | Path) -> list[keras.callbacks.Callback]:
+def make_callbacks(
+    checkpoint_path: str | Path, best_val_loss: float | None = None
+) -> list[keras.callbacks.Callback]:
+    """best_val_loss: only overwrite the checkpoint when this is beaten (for later phases)."""
     return [
         keras.callbacks.EarlyStopping(monitor="val_loss", patience=3, restore_best_weights=True),
         keras.callbacks.ModelCheckpoint(
-            str(checkpoint_path), monitor="val_loss", save_best_only=True
+            str(checkpoint_path),
+            monitor="val_loss",
+            save_best_only=True,
+            initial_value_threshold=best_val_loss,
         ),
         keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=2, min_lr=1e-6),
     ]
@@ -47,11 +53,14 @@ def train(
     augment: bool = False,
     val_fraction: float = 0.15,
     class_weight: bool = True,
+    fine_tune_epochs: int = 0,
+    fine_tune_learning_rate: float = FINE_TUNE_LEARNING_RATE,
     seed: int | None = None,
 ) -> TrainingResult:
     """Fit with a patient-grouped validation split; save the best model and its threshold.
 
-    val_fraction=0 validates on the provided val/ folder (16 images) instead.
+    val_fraction=0 validates on the provided val/ folder (16 images) instead. With
+    fine_tune_epochs > 0, a second phase trains the pretrained base's last stage.
     """
     checkpoint_path = Path(checkpoint_path)
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
@@ -62,13 +71,29 @@ def train(
         train_paths, train_labels, img_size, channels, batch_size, augment, shuffle=True, seed=seed
     )
     val_ds = make_dataset(val_paths, val_labels, img_size, channels, batch_size)
+    weights = balanced_class_weights(train_labels) if class_weight else None
     history = model.fit(
         train_ds,
         epochs=epochs,
         validation_data=val_ds,
-        class_weight=balanced_class_weights(train_labels) if class_weight else None,
+        class_weight=weights,
         callbacks=make_callbacks(checkpoint_path),
-    )
+    ).history
+
+    if fine_tune_epochs:
+        # EarlyStopping restored the best phase-one weights, so fine-tuning starts from them.
+        unfreeze_last_stage(model, fine_tune_learning_rate)
+        done = len(history["loss"])
+        print(f"Fine-tuning the last stage of the pretrained base for {fine_tune_epochs} epochs")
+        fine_tune_history = model.fit(
+            train_ds,
+            epochs=done + fine_tune_epochs,
+            initial_epoch=done,
+            validation_data=val_ds,
+            class_weight=weights,
+            callbacks=make_callbacks(checkpoint_path, best_val_loss=min(history["val_loss"])),
+        ).history
+        history = {key: history[key] + fine_tune_history[key] for key in history}
 
     best = keras.models.load_model(checkpoint_path)
     val_prob = predict_files(best, val_paths, val_labels, batch_size)
@@ -76,7 +101,7 @@ def train(
     save_threshold(checkpoint_path, threshold)
     return TrainingResult(
         model=best,
-        history=history.history,
+        history=history,
         threshold=threshold,
         val_metrics=compute_metrics(val_labels, val_prob, threshold),
     )
@@ -112,8 +137,23 @@ def main(argv: list[str] | None = None) -> None:
         default=True,
         help="weight the loss to balance NORMAL and PNEUMONIA (default: on)",
     )
+    parser.add_argument(
+        "--fine-tune-epochs",
+        type=int,
+        default=0,
+        help="after the frozen phase, train the pretrained base's last stage for this many "
+        "more epochs (default: 0, pretrained models only)",
+    )
+    parser.add_argument(
+        "--fine-tune-lr",
+        type=float,
+        default=FINE_TUNE_LEARNING_RATE,
+        help=f"learning rate for fine-tuning (default: {FINE_TUNE_LEARNING_RATE})",
+    )
     parser.add_argument("--seed", type=int)
     args = parser.parse_args(argv)
+    if args.fine_tune_epochs and args.model == "cnn":
+        parser.error("--fine-tune-epochs needs a pretrained model; cnn trains fully already")
 
     if args.seed is not None:
         keras.utils.set_random_seed(args.seed)
@@ -133,6 +173,8 @@ def main(argv: list[str] | None = None) -> None:
         augment=augment,
         val_fraction=args.val_fraction,
         class_weight=args.class_weight,
+        fine_tune_epochs=args.fine_tune_epochs,
+        fine_tune_learning_rate=args.fine_tune_lr,
         seed=args.seed,
     )
     print(f"Training time: {time.perf_counter() - start:.1f}s")

@@ -5,12 +5,14 @@ from conftest import IMG_SIZE
 from keras import layers
 
 from xray_classifier.models import (
+    LAST_STAGE_PREFIXES,
     MODEL_BUILDERS,
     build_convnext_tiny,
     build_custom_cnn,
     build_efficientnet_v2_b0,
     build_vgg16,
     pretrained_base,
+    unfreeze_last_stage,
 )
 
 PRETRAINED = [build_vgg16, build_efficientnet_v2_b0, build_convnext_tiny]
@@ -78,3 +80,30 @@ def test_pretrained_models_survive_save_and_load(build, tmp_path):
 
 def test_model_builders_cover_cli_names():
     assert set(MODEL_BUILDERS) == {"cnn", "vgg16", "efficientnetv2-b0", "convnext-tiny"}
+
+
+@pytest.mark.parametrize("build", PRETRAINED)
+def test_unfreeze_last_stage_trains_only_the_last_stage(build):
+    model = build(IMG_SIZE, weights=None)
+    base = pretrained_base(model)
+    frozen_head_weights = len(model.trainable_weights)
+    unfreeze_last_stage(model)
+
+    prefixes = LAST_STAGE_PREFIXES[base.name]
+    trainable = [layer for layer in base.layers if layer.trainable and layer.weights]
+    assert trainable, "nothing was unfrozen"
+    assert all(layer.name.startswith(prefixes) for layer in trainable)
+    assert not any(isinstance(layer, layers.BatchNormalization) for layer in trainable)
+    assert not base.layers[1].trainable  # the first stage stays frozen
+    assert len(model.trainable_weights) > frozen_head_weights
+    assert float(model.optimizer.learning_rate) == pytest.approx(1e-5)
+
+
+def test_last_stage_prefixes_match_backbone_names():
+    names = {pretrained_base(build(IMG_SIZE, weights=None)).name for build in PRETRAINED}
+    assert names == set(LAST_STAGE_PREFIXES)
+
+
+def test_unfreeze_last_stage_rejects_custom_cnn():
+    with pytest.raises(ValueError, match="no pretrained base"):
+        unfreeze_last_stage(build_custom_cnn(IMG_SIZE))

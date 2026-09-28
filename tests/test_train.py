@@ -5,9 +5,14 @@ import numpy as np
 import pytest
 from conftest import IMG_SIZE
 
-from xray_classifier.models import build_custom_cnn, build_efficientnet_v2_b0, build_vgg16
+from xray_classifier.models import (
+    build_custom_cnn,
+    build_efficientnet_v2_b0,
+    build_vgg16,
+    pretrained_base,
+)
 from xray_classifier.thresholds import load_threshold
-from xray_classifier.train import balanced_class_weights, main, train
+from xray_classifier.train import balanced_class_weights, main, make_callbacks, train
 
 
 def test_train_custom_cnn_saves_loadable_checkpoint(data_dir, tmp_path):
@@ -98,3 +103,52 @@ def test_train_pooled_pretrained_model(data_dir, tmp_path):
     )
     assert result.model.input_shape == (None, IMG_SIZE, IMG_SIZE, 3)
     assert checkpoint.with_suffix(".json").exists()
+
+
+def test_fine_tuning_adds_a_second_phase(data_dir, tmp_path):
+    checkpoint = tmp_path / "vgg16.keras"
+    model = build_vgg16(IMG_SIZE, weights=None)
+    result = train(
+        model, data_dir, checkpoint, epochs=1, batch_size=4, val_fraction=0.5, fine_tune_epochs=2
+    )
+    assert len(result.history["loss"]) == 3
+    assert checkpoint.exists() and checkpoint.with_suffix(".json").exists()
+
+
+def test_later_phase_checkpoint_only_saves_improvements(tmp_path):
+    checkpoint_cb = next(
+        cb
+        for cb in make_callbacks(tmp_path / "m.keras", best_val_loss=0.25)
+        if isinstance(cb, keras.callbacks.ModelCheckpoint)
+    )
+    assert checkpoint_cb.best == 0.25
+
+
+def test_cli_rejects_fine_tuning_the_custom_cnn(data_dir, capsys):
+    with pytest.raises(SystemExit):
+        main(["--model=cnn", f"--data-dir={data_dir}", "--fine-tune-epochs=2"])
+    assert "needs a pretrained model" in capsys.readouterr().err
+
+
+def test_fine_tuning_updates_last_stage_weights_only(data_dir, tmp_path):
+    model = build_vgg16(IMG_SIZE, weights=None)
+    base = pretrained_base(model)
+    before = {
+        name: base.get_layer(name).get_weights()[0].copy()
+        for name in ("block1_conv1", "block5_conv3")
+    }
+    train(
+        model,
+        data_dir,
+        tmp_path / "vgg16.keras",
+        epochs=1,
+        batch_size=4,
+        val_fraction=0.5,
+        fine_tune_epochs=1,
+        fine_tune_learning_rate=1e-3,
+    )
+    # `model` is the in-memory model that went through both phases.
+    assert np.array_equal(base.get_layer("block1_conv1").get_weights()[0], before["block1_conv1"])
+    assert not np.array_equal(
+        base.get_layer("block5_conv3").get_weights()[0], before["block5_conv3"]
+    )
