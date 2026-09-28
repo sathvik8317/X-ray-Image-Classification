@@ -32,7 +32,7 @@ Convolutional neural networks (CNNs) that classify chest X‑ray images as **Nor
 The project trains and compares two models on the public [Chest X‑Ray Pneumonia dataset](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia):
 
 * **Custom CNN**: three Conv2D + MaxPooling + Dropout blocks on 100x100 grayscale images.
-* **VGG16 transfer learning**: an ImageNet-pretrained VGG16 base (frozen) with a dense head, on 100x100 RGB images with random zoom augmentation.
+* **VGG16 transfer learning**: an ImageNet-pretrained VGG16 base (frozen) with a dense head, on 100x100 RGB images with random zoom augmentation. VGG16's ImageNet input preprocessing is built into the model.
 
 Features:
 
@@ -167,7 +167,7 @@ export XRAY_MODELS_DIR=/content/drive/MyDrive/models
 
 ## Results
 
-Recorded from the original Colab run of the notebook (10 epochs, before the callbacks and the `tf.data` pipeline were added):
+Recorded from the original Colab run of the notebook (10 epochs). That run predates the training callbacks, the `tf.data` pipeline, and two model fixes (a missing ReLU in the custom CNN, and missing ImageNet preprocessing for VGG16), so current code should do at least as well:
 
 | Model | Validation accuracy (16 images) | Test accuracy (624 images) |
 | --- | --- | --- |
