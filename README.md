@@ -81,6 +81,7 @@ tensorflow
 keras
 numpy
 matplotlib
+scikit-learn
 kaggle
 ```
 
