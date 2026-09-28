@@ -56,16 +56,21 @@ def train(
     fine_tune_epochs: int = 0,
     fine_tune_learning_rate: float = FINE_TUNE_LEARNING_RATE,
     seed: int | None = None,
+    split_seed: int = 0,
 ) -> TrainingResult:
     """Fit with a patient-grouped validation split; save the best model and its threshold.
 
     val_fraction=0 validates on the provided val/ folder (16 images) instead. With
     fine_tune_epochs > 0, a second phase trains the pretrained base's last stage.
+    `seed` controls shuffling and augmentation; the validation patients are chosen by
+    `split_seed` alone, so runs with different seeds are compared on the same patients.
     """
     checkpoint_path = Path(checkpoint_path)
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     img_size, channels = model.input_shape[1], model.input_shape[-1]
-    (train_paths, train_labels), (val_paths, val_labels) = train_val_files(data_dir, val_fraction)
+    (train_paths, train_labels), (val_paths, val_labels) = train_val_files(
+        data_dir, val_fraction, split_seed
+    )
     print(f"Training on {len(train_paths)} images, validating on {len(val_paths)}")
     train_ds = make_dataset(
         train_paths, train_labels, img_size, channels, batch_size, augment, shuffle=True, seed=seed
@@ -150,7 +155,13 @@ def main(argv: list[str] | None = None) -> None:
         default=FINE_TUNE_LEARNING_RATE,
         help=f"learning rate for fine-tuning (default: {FINE_TUNE_LEARNING_RATE})",
     )
-    parser.add_argument("--seed", type=int)
+    parser.add_argument("--seed", type=int, help="seed for shuffling, augmentation, and weights")
+    parser.add_argument(
+        "--split-seed",
+        type=int,
+        default=0,
+        help="seed choosing the validation patients (default: 0, the same split every run)",
+    )
     args = parser.parse_args(argv)
     if args.fine_tune_epochs and args.model == "cnn":
         parser.error("--fine-tune-epochs needs a pretrained model; cnn trains fully already")
@@ -176,6 +187,7 @@ def main(argv: list[str] | None = None) -> None:
         fine_tune_epochs=args.fine_tune_epochs,
         fine_tune_learning_rate=args.fine_tune_lr,
         seed=args.seed,
+        split_seed=args.split_seed,
     )
     print(f"Training time: {time.perf_counter() - start:.1f}s")
     print(f"Best model saved to {output}")

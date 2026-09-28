@@ -163,7 +163,8 @@ xray-train --model efficientnetv2-b0 --fine-tune-epochs 5
 | `--class-weight/--no-class-weight` | on | Balance NORMAL and PNEUMONIA in the loss |
 | `--fine-tune-epochs` | 0 | Extra epochs training the backbone's last stage (pretrained models only) |
 | `--fine-tune-lr` | 1e-5 | Learning rate for fine-tuning |
-| `--seed` | none | Seed for reproducible runs |
+| `--seed` | none | Seed for shuffling, augmentation, and weight initialization |
+| `--split-seed` | 0 | Seed choosing the validation patients; fixed by default so runs are compared on the same patients |
 
 Evaluate a trained model on the test set, optionally saving the plots. It warns if patients in the evaluated split also appear in `train/`:
 

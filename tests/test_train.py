@@ -152,3 +152,20 @@ def test_fine_tuning_updates_last_stage_weights_only(data_dir, tmp_path):
     assert not np.array_equal(
         base.get_layer("block5_conv3").get_weights()[0], before["block5_conv3"]
     )
+
+
+def test_train_uses_split_seed_for_the_validation_split(data_dir, tmp_path, monkeypatch):
+    import xray_classifier.train as train_module
+
+    seen = []
+    original = train_module.train_val_files
+
+    def spy(data_dir, val_fraction, split_seed):
+        seen.append(split_seed)
+        return original(data_dir, val_fraction, split_seed)
+
+    monkeypatch.setattr(train_module, "train_val_files", spy)
+    model = build_custom_cnn(IMG_SIZE)
+    train(model, data_dir, tmp_path / "m.keras", epochs=1, batch_size=4, val_fraction=0.5,
+          seed=5, split_seed=7)  # fmt: skip
+    assert seen == [7]

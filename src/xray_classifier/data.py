@@ -4,7 +4,6 @@ from pathlib import Path
 import keras
 import numpy as np
 import tensorflow as tf
-from sklearn.model_selection import StratifiedGroupKFold
 
 from .config import CATEGORIES, IMG_SIZE
 
@@ -46,18 +45,29 @@ def patient_id(path: str | Path) -> str:
 def split_by_patient(
     paths: list[str], labels: np.ndarray, val_fraction: float = 0.15, seed: int = 0
 ) -> tuple[Files, Files]:
-    """Stratified train/validation split in which no patient appears on both sides."""
+    """Stratified train/validation split in which no patient appears on both sides.
+
+    For each class, patients are shuffled and moved to validation until it holds
+    val_fraction of that class's images (whole patients, so it can run over slightly).
+    """
     if not 0 < val_fraction <= 0.5:
         raise ValueError(f"val_fraction must be in (0, 0.5], got {val_fraction}")
-    splitter = StratifiedGroupKFold(
-        n_splits=round(1 / val_fraction), shuffle=True, random_state=seed
-    )
-    groups = [patient_id(p) for p in paths]
-    train_idx, val_idx = next(splitter.split(paths, labels, groups))
+    rng = np.random.default_rng(seed)
+    groups = np.array([patient_id(p) for p in paths])
+    in_val = np.zeros(len(paths), dtype=bool)
+    for label in np.unique(labels):
+        of_class = labels == label
+        target = val_fraction * of_class.sum()
+        patients = np.unique(groups[of_class])
+        rng.shuffle(patients)
+        for patient in patients:
+            if (in_val & of_class).sum() >= target:
+                break
+            in_val |= groups == patient
     paths_array = np.asarray(paths)
     return (
-        (paths_array[train_idx].tolist(), labels[train_idx]),
-        (paths_array[val_idx].tolist(), labels[val_idx]),
+        (paths_array[~in_val].tolist(), labels[~in_val]),
+        (paths_array[in_val].tolist(), labels[in_val]),
     )
 
 

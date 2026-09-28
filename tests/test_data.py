@@ -84,6 +84,33 @@ def test_split_by_patient_is_deterministic():
     )
 
 
+def test_split_seed_changes_the_validation_patients():
+    paths, labels = _patients(n_normal=20, n_pneumonia=40)
+    assert (
+        split_by_patient(paths, labels, seed=0)[1][0]
+        != split_by_patient(paths, labels, seed=1)[1][0]
+    )
+
+
+@pytest.mark.parametrize("val_fraction", [0.1, 0.15, 0.25, 0.3, 0.4, 0.5])
+def test_split_by_patient_holds_out_the_requested_fraction_per_class(val_fraction):
+    paths, labels = _patients(n_normal=100, n_pneumonia=300, images_per_patient=2)
+    (_, _), (val_paths, val_labels) = split_by_patient(paths, labels, val_fraction)
+    for label, class_size in ((0, 200), (1, 600)):
+        held_out = (val_labels == label).sum()
+        # Whole patients (2 images each), so at most one patient over the target.
+        assert val_fraction * class_size <= held_out < val_fraction * class_size + 2
+
+
+def test_split_by_patient_keeps_mixed_label_patients_on_one_side():
+    paths = ["a/person1_x_1.jpeg", "b/person1_x_2.jpeg"] + [
+        f"c/person{p}_x_1.jpeg" for p in range(2, 12)
+    ]
+    labels = np.array([0, 1] + [0] * 5 + [1] * 5)
+    (train_paths, _), (val_paths, _) = split_by_patient(paths, labels, 0.3)
+    assert not patient_overlap(train_paths, val_paths)
+
+
 @pytest.mark.parametrize("val_fraction", [0, 0.6, -0.1])
 def test_split_by_patient_rejects_bad_fraction(val_fraction):
     paths, labels = _patients(n_normal=4, n_pneumonia=4)
