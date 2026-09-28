@@ -1,23 +1,27 @@
 # Chest X‑Ray Pneumonia Classification
 
-A Jupyter Notebook project that implements convolutional neural networks (CNNs) to classify chest X‑ray images into **Normal** (healthy) or **Pneumonia** categories. The entire workflow—from data acquisition and preprocessing to model training, evaluation, and visualization—is contained in a single notebook for clarity and reproducibility.
+Convolutional neural networks (CNNs) that classify chest X‑ray images as **Normal** (healthy) or **Pneumonia**. The code is a small Python package, `xray_classifier`, with command-line tools for training, evaluation, and prediction, plus a notebook that walks through the whole workflow.
 
 ---
 
 ## 📖 Table of Contents
 
 1. [About](#about)
-2. [Features](#features)
+2. [Project Structure](#project-structure)
 3. [Prerequisites](#prerequisites)
 4. [Project Setup](#project-setup)
 
    * [Clone Repository](#clone-repository)
    * [Install Dependencies](#install-dependencies)
-   * [Development Setup](#development-setup)
    * [Download Dataset](#download-dataset)
+   * [Development Setup](#development-setup)
 5. [Usage](#usage)
-6. [Notebook Outline](#notebook-outline)
-7. [Results](#results)
+
+   * [Command Line](#command-line)
+   * [Notebook](#notebook)
+   * [Configuration](#configuration)
+6. [Results](#results)
+7. [Testing](#testing)
 8. [Contributing](#contributing)
 9. [License](#license)
 
@@ -25,71 +29,65 @@ A Jupyter Notebook project that implements convolutional neural networks (CNNs) 
 
 ## About
 
-The notebook **X\_ray\_Image\_Classification.ipynb** guides you through:
+The project trains and compares two models on the public [Chest X‑Ray Pneumonia dataset](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia):
 
-* Downloading and extracting the public [Chest X‑Ray Pneumonia dataset](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia).
-* Loading images from `train/`, `val/`, and `test/` directories.
-* Preprocessing (resizing, grayscale conversion, normalization).
-* Data augmentation using `ImageDataGenerator`.
-* Building two CNNs:
+* **Custom CNN**: three Conv2D + MaxPooling + Dropout blocks on 100x100 grayscale images.
+* **VGG16 transfer learning**: an ImageNet-pretrained VGG16 base (frozen) with a dense head, on 100x100 RGB images with random zoom augmentation.
 
-  * A custom Sequential model (Conv2D + MaxPooling + Dropout).
-  * A transfer learning model using VGG16 as the base.
-* Training with real-time visualization of loss & accuracy.
-* Evaluating performance (accuracy, confusion matrix, ROC curve).
-* Saving the best model for future inference.
+Features:
 
-## Features
+* A `tf.data` input pipeline that streams images from the `train/`, `val/`, and `test/` folders.
+* Training with early stopping, learning-rate reduction on plateau, and checkpointing of the best model (`.keras` format).
+* Evaluation with accuracy, precision/recall/F1, a confusion matrix, and an ROC curve with AUC.
+* Plots of training curves, confusion matrix, and ROC curve.
+* Single-image prediction using the same preprocessing as training.
 
-* Automated dataset download via Kaggle API or manual instructions.
-* Grayscale & RGB pipelines for custom and transfer-learning models.
-* Data augmentation to reduce overfitting.
-* Clear visualizations: training curves, confusion matrix, ROC.
-* Model export (`.h5`) for deployment.
+## Project Structure
+
+```
+.
+├── X_ray_Image_Classification.ipynb   # walkthrough notebook (Colab-ready)
+├── src/xray_classifier/
+│   ├── config.py      # class names, image size, data and model paths
+│   ├── data.py        # tf.data pipeline and single-image loading
+│   ├── models.py      # custom CNN and VGG16 model builders
+│   ├── train.py       # training loop with callbacks (xray-train)
+│   ├── evaluate.py    # metrics on a data split (xray-evaluate)
+│   ├── predict.py     # single-image prediction (xray-predict)
+│   └── plots.py       # training curves, confusion matrix, ROC curve
+├── tests/             # pytest suite, runs on a small synthetic dataset
+└── pyproject.toml     # package metadata, dependencies, tool config
+```
 
 ## Prerequisites
 
-* **Python 3.8+**
-* **Jupyter Notebook**
-* **Kaggle CLI** (optional, for dataset download)
+* **Python 3.10+**
+* A **Kaggle account** and API token, to download the dataset
 
 ## Project Setup
 
 ### Clone Repository
 
 ```bash
-git clone https://github.com/<your-username>/xray-image-classification.git
-cd xray-image-classification
+git clone https://github.com/sathvik8317/X-ray-Image-Classification.git
+cd X-ray-Image-Classification
 ```
 
 ### Install Dependencies
 
-Create a virtual environment (recommended) and install required packages:
+Create a virtual environment (recommended) and install the package:
 
 ```bash
 python -m venv venv
 source venv/bin/activate      # macOS/Linux
-venv\Scripts\activate       # Windows
+venv\Scripts\activate         # Windows
 
 pip install -r requirements.txt
 ```
 
-### Development Setup
-
-For contributors, install the dev tools and enable the git hooks:
-
-```bash
-pip install -r requirements-dev.txt
-pre-commit install
-```
-
-The hooks run [Ruff](https://docs.astral.sh/ruff/) on the notebook, strip execution counts and transient metadata with `nbstripout` (outputs are kept), and block accidentally committed large files. Run them manually with `pre-commit run --all-files`.
-
-Never commit `kaggle.json`, the dataset, or trained model files. They are listed in `.gitignore`.
+This installs `xray_classifier` in editable mode along with its dependencies (TensorFlow, NumPy, Matplotlib, scikit-learn, Kaggle), which are listed in `pyproject.toml`.
 
 ### Download Dataset
-
-#### Option 1: Kaggle CLI (recommended)
 
 1. Place your Kaggle API token (`kaggle.json`) in `~/.kaggle/`.
 2. Run:
@@ -112,50 +110,80 @@ Never commit `kaggle.json`, the dataset, or trained model files. They are listed
        └── PNEUMONIA/
    ```
 
-#### Option 2: Manual Download
+You can also download the zip manually from the [Kaggle dataset page](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia) and unzip it into `data/`.
 
-1. Visit the [Kaggle dataset page](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia).
-2. Download and unzip into a `data/chest_xray/` directory.
+### Development Setup
+
+For contributors, install the dev tools and enable the git hooks:
+
+```bash
+pip install -r requirements-dev.txt
+pre-commit install
+```
+
+The hooks run [Ruff](https://docs.astral.sh/ruff/) (lint and format) on the code and notebook, strip execution counts and transient metadata from the notebook with `nbstripout` (outputs are kept), and block accidentally committed large files. Run them manually with `pre-commit run --all-files`.
+
+Never commit `kaggle.json`, the dataset, or trained model files. They are listed in `.gitignore`.
 
 ## Usage
 
-1. Launch Jupyter Notebook:
+### Command Line
 
-   ```bash
-   jupyter notebook
-   ```
-2. Open `X_ray_Image_Classification.ipynb`.
-3. Update the `data_dir` variable at the top of the notebook to point to `./data/chest_xray/train`.
-4. Run cells sequentially.
+Train a model. The best checkpoint (lowest validation loss) is saved to `models/<model>.keras`:
 
-> **Tip:** To switch between the custom CNN and the VGG16-based model, comment/uncomment the respective training sections.
+```bash
+xray-train --model cnn
+xray-train --model vgg16
+```
 
-## Notebook Outline
+Useful options: `--epochs` (default 10), `--batch-size` (default 4 for `cnn`, 32 for `vgg16`), `--augment/--no-augment` (default on for `vgg16` only), `--seed`, `--output`. Run `xray-train --help` for the full list.
 
-1. **Setup & Imports**: Libraries, paths, global variables.
-2. **Data Exploration**: Sample images, class distribution.
-3. **Preprocessing Functions**: Resizing, normalization.
-4. **Dataset Generators**: `ImageDataGenerator` for train/val/test.
-5. **Model Definitions**:
+Evaluate a trained model on the test set, optionally saving the plots:
 
-   * Custom Sequential CNN.
-   * VGG16 transfer-learning model.
-6. **Training Loops**: Fit models, measure training time.
-7. **Evaluation**: Accuracy, confusion matrix, ROC curve.
-8. **Inference & Saving**: Predict on new images and export `.h5` model.
+```bash
+xray-evaluate models/vgg16.keras --plots-dir reports/
+```
+
+Classify individual images:
+
+```bash
+xray-predict models/vgg16.keras path/to/image1.jpeg path/to/image2.jpeg
+```
+
+Each command is also available as `python -m xray_classifier.<train|evaluate|predict>`.
+
+### Notebook
+
+Open `X_ray_Image_Classification.ipynb` in Jupyter or [Google Colab](https://colab.research.google.com/) and run the cells in order. It explores the data, then trains, evaluates, and compares both models. In Colab, the first cell clones this repository and installs the package; upload `kaggle.json` to the Colab working directory so the download cell can fetch the dataset.
+
+### Configuration
+
+Paths default to `data/chest_xray` for the dataset and `models/` for checkpoints. Override them with environment variables, for example to point at a mounted Google Drive folder:
+
+```bash
+export XRAY_DATA_DIR=/content/drive/MyDrive/Datasets/chest_xray
+export XRAY_MODELS_DIR=/content/drive/MyDrive/models
+```
 
 ## Results
 
-Typical performance metrics:
+Recorded from the original Colab run of the notebook (10 epochs, before the callbacks and the `tf.data` pipeline were added):
 
-* **Custom CNN**: \~92% validation accuracy
-* **VGG16 Transfer Learning**: \~96% validation accuracy
+| Model | Validation accuracy (16 images) | Test accuracy (624 images) |
+| --- | --- | --- |
+| Custom CNN | 81.3% | 74.7% |
+| VGG16 transfer learning | 68.8% | 85.9% |
 
-Visualization outputs include:
+The provided validation split has only 16 images, so validation accuracy swings widely between epochs; the test set is the more reliable measure. Rerun training to get current numbers, including precision, recall, and ROC AUC from `xray-evaluate`.
 
-* Training vs. validation accuracy & loss plots
-* Confusion matrix heatmap
-* ROC curve with AUC score
+## Testing
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+The tests build a small synthetic dataset, so they run in seconds and do not need the Kaggle data.
 
 ## Contributing
 
