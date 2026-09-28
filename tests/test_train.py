@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from conftest import IMG_SIZE
 
-from xray_classifier.models import build_custom_cnn, build_vgg16
+from xray_classifier.models import build_custom_cnn, build_efficientnet_v2_b0, build_vgg16
 from xray_classifier.thresholds import load_threshold
 from xray_classifier.train import balanced_class_weights, main, train
 
@@ -88,3 +88,13 @@ def test_class_weight_is_applied_on_imbalanced_data(data_dir, tmp_path):
         return result.history["loss"][0]
 
     assert first_epoch_loss(True) != pytest.approx(first_epoch_loss(False), rel=1e-3)
+
+
+def test_train_pooled_pretrained_model(data_dir, tmp_path):
+    checkpoint = tmp_path / "effnet.keras"
+    model = build_efficientnet_v2_b0(IMG_SIZE, weights=None)
+    result = train(
+        model, data_dir, checkpoint, epochs=1, batch_size=4, augment=True, val_fraction=0.5
+    )
+    assert result.model.input_shape == (None, IMG_SIZE, IMG_SIZE, 3)
+    assert checkpoint.with_suffix(".json").exists()

@@ -7,13 +7,11 @@ import keras
 import numpy as np
 from sklearn.utils.class_weight import compute_class_weight
 
-from .config import DATA_DIR, IMG_SIZE, MODELS_DIR
+from .config import DATA_DIR, MODELS_DIR
 from .data import make_dataset, train_val_files
 from .evaluate import Metrics, compute_metrics, predict_files
 from .models import MODEL_BUILDERS
 from .thresholds import choose_threshold, save_threshold
-
-DEFAULT_BATCH_SIZE = {"cnn": 4, "vgg16": 32}
 
 
 def make_callbacks(checkpoint_path: str | Path) -> list[keras.callbacks.Callback]:
@@ -92,12 +90,14 @@ def main(argv: list[str] | None = None) -> None:
         "--output", type=Path, help="where to save the best model (default: models/<model>.keras)"
     )
     parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, help="default: 4 for cnn, 32 for vgg16")
-    parser.add_argument("--img-size", type=int, default=IMG_SIZE)
+    parser.add_argument("--batch-size", type=int, help="default: 4 for cnn, 32 otherwise")
+    parser.add_argument(
+        "--img-size", type=int, help="default: 100 for cnn and vgg16, 224 for the others"
+    )
     parser.add_argument(
         "--augment",
         action=argparse.BooleanOptionalAction,
-        help="random zoom augmentation (default: on for vgg16, off for cnn)",
+        help="random zoom augmentation (default: off for cnn, on for pretrained models)",
     )
     parser.add_argument(
         "--val-fraction",
@@ -118,16 +118,18 @@ def main(argv: list[str] | None = None) -> None:
     if args.seed is not None:
         keras.utils.set_random_seed(args.seed)
     output = args.output or MODELS_DIR / f"{args.model}.keras"
-    augment = args.augment if args.augment is not None else args.model == "vgg16"
+    augment = args.augment if args.augment is not None else args.model != "cnn"
+    batch_size = args.batch_size or (4 if args.model == "cnn" else 32)
 
-    model = MODEL_BUILDERS[args.model](args.img_size)
+    build = MODEL_BUILDERS[args.model]
+    model = build(args.img_size) if args.img_size else build()
     start = time.perf_counter()
     result = train(
         model,
         args.data_dir,
         output,
         epochs=args.epochs,
-        batch_size=args.batch_size or DEFAULT_BATCH_SIZE[args.model],
+        batch_size=batch_size,
         augment=augment,
         val_fraction=args.val_fraction,
         class_weight=args.class_weight,
