@@ -3,6 +3,8 @@ import time
 from pathlib import Path
 
 import keras
+import numpy as np
+from sklearn.utils.class_weight import compute_class_weight
 
 from .config import DATA_DIR, IMG_SIZE, MODELS_DIR
 from .data import make_dataset, train_val_files
@@ -21,6 +23,12 @@ def make_callbacks(checkpoint_path: str | Path) -> list[keras.callbacks.Callback
     ]
 
 
+def balanced_class_weights(labels: np.ndarray) -> dict[int, float]:
+    """Weights that make each class contribute equally to the loss."""
+    weights = compute_class_weight("balanced", classes=np.array([0, 1]), y=labels)
+    return {0: float(weights[0]), 1: float(weights[1])}
+
+
 def train(
     model: keras.Model,
     data_dir: str | Path,
@@ -29,11 +37,13 @@ def train(
     batch_size: int = 32,
     augment: bool = False,
     val_fraction: float = 0.15,
+    class_weight: bool = True,
     seed: int | None = None,
 ) -> keras.callbacks.History:
     """Fit on data_dir/train, validate on a patient-grouped split, and save the best model.
 
     val_fraction=0 validates on the provided data_dir/val folder instead (16 images).
+    class_weight=True weights the loss so NORMAL and PNEUMONIA count equally overall.
     """
     checkpoint_path = Path(checkpoint_path)
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
@@ -48,6 +58,7 @@ def train(
         train_ds,
         epochs=epochs,
         validation_data=val_ds,
+        class_weight=balanced_class_weights(train_labels) if class_weight else None,
         callbacks=make_callbacks(checkpoint_path),
     )
 
@@ -74,6 +85,12 @@ def main(argv: list[str] | None = None) -> None:
         help="share of train/ + val/ held out for validation, split by patient "
         "(default: 0.15; 0 uses the provided 16-image val/ folder)",
     )
+    parser.add_argument(
+        "--class-weight",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="weight the loss to balance NORMAL and PNEUMONIA (default: on)",
+    )
     parser.add_argument("--seed", type=int)
     args = parser.parse_args(argv)
 
@@ -92,6 +109,7 @@ def main(argv: list[str] | None = None) -> None:
         batch_size=args.batch_size or DEFAULT_BATCH_SIZE[args.model],
         augment=augment,
         val_fraction=args.val_fraction,
+        class_weight=args.class_weight,
         seed=args.seed,
     )
     print(f"Training time: {time.perf_counter() - start:.1f}s")
