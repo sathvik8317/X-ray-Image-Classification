@@ -23,3 +23,13 @@ def data_dir(tmp_path_factory):
                 tf.io.write_file(str(folder / f"img_{i}.jpeg"), tf.io.encode_jpeg(img))
     (root / "train" / "NORMAL" / ".DS_Store").write_bytes(b"not an image")
     return root
+
+
+@pytest.fixture(scope="session")
+def trained_cnn_path(data_dir, tmp_path_factory):
+    from xray_classifier.models import build_custom_cnn
+    from xray_classifier.train import train
+
+    path = tmp_path_factory.mktemp("models") / "cnn.keras"
+    train(build_custom_cnn(IMG_SIZE), data_dir, path, epochs=1, batch_size=4)
+    return path
