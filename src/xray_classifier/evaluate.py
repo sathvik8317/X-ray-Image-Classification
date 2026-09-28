@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score, auc, classification_report, confusion_matrix, roc_curve
 
 from .config import CATEGORIES, DATA_DIR
-from .data import dataset_labels, make_dataset
+from .data import list_images, make_dataset
 from .plots import plot_confusion_matrix, plot_roc_curve
 
 
@@ -27,8 +27,9 @@ def predict_split(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return (true labels, pneumonia probabilities) for every image in a split folder."""
     img_size, channels = model.input_shape[1], model.input_shape[-1]
+    _, labels = list_images(split_dir)
     ds = make_dataset(split_dir, img_size, channels, batch_size)
-    return dataset_labels(ds), model.predict(ds, verbose=0).ravel()
+    return labels, model.predict(ds, verbose=0).ravel()
 
 
 def compute_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float = 0.5) -> Metrics:
