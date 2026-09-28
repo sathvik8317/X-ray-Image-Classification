@@ -16,16 +16,26 @@ def test_compute_metrics_known_values():
     assert m.accuracy == 0.5
     assert m.roc_auc == pytest.approx(0.75)
     assert m.confusion_matrix.tolist() == [[1, 1], [1, 1]]
+    assert m.sensitivity == 0.5 and m.specificity == 0.5
     assert "NORMAL" in m.report and "PNEUMONIA" in m.report
+
+
+def test_compute_metrics_sensitivity_and_specificity():
+    # 3 of 4 pneumonia cases caught, 1 of 2 normal cases cleared.
+    y_true = np.array([0, 0, 1, 1, 1, 1])
+    y_prob = np.array([0.2, 0.7, 0.9, 0.8, 0.6, 0.3])
+    m = compute_metrics(y_true, y_prob, threshold=0.5)
+    assert m.sensitivity == 0.75
+    assert m.specificity == 0.5
+    assert "Sensitivity 0.7500" in m.summary()
 
 
 def test_compute_metrics_threshold():
     y_true = np.array([0, 0, 1, 1])
     y_prob = np.array([0.1, 0.6, 0.4, 0.9])
-    assert compute_metrics(y_true, y_prob, threshold=0.35).confusion_matrix.tolist() == [
-        [1, 1],
-        [0, 2],
-    ]
+    m = compute_metrics(y_true, y_prob, threshold=0.35)
+    assert m.confusion_matrix.tolist() == [[1, 1], [0, 2]]
+    assert m.threshold == 0.35
 
 
 def test_predict_split_returns_label_and_probability_per_image(data_dir, trained_cnn_path):
@@ -39,15 +49,15 @@ def test_predict_split_returns_label_and_probability_per_image(data_dir, trained
 def test_cli_prints_metrics_and_saves_plots(data_dir, trained_cnn_path, tmp_path, capsys):
     main([str(trained_cnn_path), f"--data-dir={data_dir}", f"--plots-dir={tmp_path}"])
     out = capsys.readouterr().out
-    assert "Accuracy:" in out and "ROC AUC:" in out
+    assert "Using threshold" in out and "cnn.json" in out
+    assert all(k in out for k in ("Accuracy:", "Sensitivity:", "Specificity:", "ROC AUC:"))
     assert (tmp_path / "cnn_confusion_matrix.png").exists()
     assert (tmp_path / "cnn_roc_curve.png").exists()
 
 
 def test_plots_return_figures():
-    history = keras.callbacks.History()
-    history.history = {"accuracy": [0.5, 0.7], "val_accuracy": [0.4, 0.6], "loss": [1, 0.5],
-                       "val_loss": [1.2, 0.8]}  # fmt: skip
+    history = {"accuracy": [0.5, 0.7], "val_accuracy": [0.4, 0.6], "loss": [1, 0.5],
+               "val_loss": [1.2, 0.8]}  # fmt: skip
     assert len(plot_history(history).axes) == 2
     assert plot_confusion_matrix(np.array([[3, 1], [0, 4]])).axes[0].get_title()
     assert plot_roc_curve(np.array([0, 1]), np.array([0, 1]), 0.5).axes[0].get_title()

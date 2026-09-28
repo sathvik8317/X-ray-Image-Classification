@@ -1,4 +1,3 @@
-import keras
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.figure import Figure
@@ -7,12 +6,12 @@ from sklearn.metrics import ConfusionMatrixDisplay
 from .config import CATEGORIES
 
 
-def plot_history(history: keras.callbacks.History, title: str = "Training") -> Figure:
+def plot_history(history: dict[str, list[float]], title: str = "Training") -> Figure:
     fig, axes = plt.subplots(1, 2, figsize=(11, 4))
     for ax, metric in zip(axes, ("accuracy", "loss"), strict=True):
-        epochs = np.arange(1, len(history.history[metric]) + 1)
-        ax.plot(epochs, history.history[metric], label="train")
-        ax.plot(epochs, history.history[f"val_{metric}"], label="validation")
+        epochs = np.arange(1, len(history[metric]) + 1)
+        ax.plot(epochs, history[metric], label="train")
+        ax.plot(epochs, history[f"val_{metric}"], label="validation")
         ax.set_xlabel("Epoch")
         ax.set_ylabel(metric.capitalize())
         ax.legend()

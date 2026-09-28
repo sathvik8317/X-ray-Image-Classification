@@ -1,5 +1,6 @@
 import argparse
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import keras
@@ -8,7 +9,9 @@ from sklearn.utils.class_weight import compute_class_weight
 
 from .config import DATA_DIR, IMG_SIZE, MODELS_DIR
 from .data import make_dataset, train_val_files
+from .evaluate import Metrics, compute_metrics, predict_files
 from .models import MODEL_BUILDERS
+from .thresholds import choose_threshold, save_threshold
 
 DEFAULT_BATCH_SIZE = {"cnn": 4, "vgg16": 32}
 
@@ -21,6 +24,14 @@ def make_callbacks(checkpoint_path: str | Path) -> list[keras.callbacks.Callback
         ),
         keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=2, min_lr=1e-6),
     ]
+
+
+@dataclass
+class TrainingResult:
+    model: keras.Model  # best checkpoint, reloaded from disk
+    history: dict[str, list[float]]
+    threshold: float  # chosen on the validation split, saved next to the checkpoint
+    val_metrics: Metrics
 
 
 def balanced_class_weights(labels: np.ndarray) -> dict[int, float]:
@@ -39,11 +50,10 @@ def train(
     val_fraction: float = 0.15,
     class_weight: bool = True,
     seed: int | None = None,
-) -> keras.callbacks.History:
-    """Fit on data_dir/train, validate on a patient-grouped split, and save the best model.
+) -> TrainingResult:
+    """Fit with a patient-grouped validation split; save the best model and its threshold.
 
-    val_fraction=0 validates on the provided data_dir/val folder instead (16 images).
-    class_weight=True weights the loss so NORMAL and PNEUMONIA count equally overall.
+    val_fraction=0 validates on the provided val/ folder (16 images) instead.
     """
     checkpoint_path = Path(checkpoint_path)
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
@@ -54,12 +64,23 @@ def train(
         train_paths, train_labels, img_size, channels, batch_size, augment, shuffle=True, seed=seed
     )
     val_ds = make_dataset(val_paths, val_labels, img_size, channels, batch_size)
-    return model.fit(
+    history = model.fit(
         train_ds,
         epochs=epochs,
         validation_data=val_ds,
         class_weight=balanced_class_weights(train_labels) if class_weight else None,
         callbacks=make_callbacks(checkpoint_path),
+    )
+
+    best = keras.models.load_model(checkpoint_path)
+    val_prob = predict_files(best, val_paths, val_labels, batch_size)
+    threshold = choose_threshold(val_labels, val_prob)
+    save_threshold(checkpoint_path, threshold)
+    return TrainingResult(
+        model=best,
+        history=history.history,
+        threshold=threshold,
+        val_metrics=compute_metrics(val_labels, val_prob, threshold),
     )
 
 
@@ -101,7 +122,7 @@ def main(argv: list[str] | None = None) -> None:
 
     model = MODEL_BUILDERS[args.model](args.img_size)
     start = time.perf_counter()
-    train(
+    result = train(
         model,
         args.data_dir,
         output,
@@ -114,6 +135,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     print(f"Training time: {time.perf_counter() - start:.1f}s")
     print(f"Best model saved to {output}")
+    print(f"Validation: {result.val_metrics.summary()}")
 
 
 if __name__ == "__main__":
