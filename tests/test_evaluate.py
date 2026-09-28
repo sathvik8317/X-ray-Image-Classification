@@ -1,3 +1,5 @@
+import shutil
+
 import keras
 import numpy as np
 import pytest
@@ -49,3 +51,16 @@ def test_plots_return_figures():
     assert len(plot_history(history).axes) == 2
     assert plot_confusion_matrix(np.array([[3, 1], [0, 4]])).axes[0].get_title()
     assert plot_roc_curve(np.array([0, 1]), np.array([0, 1]), 0.5).axes[0].get_title()
+
+
+def test_cli_warns_when_test_patients_appear_in_train(data_dir, trained_cnn_path, tmp_path, capsys):
+    leaky = tmp_path / "leaky"
+    shutil.copytree(data_dir, leaky)
+    train_image = sorted((leaky / "train" / "PNEUMONIA").glob("*.jpeg"))[0]
+    shutil.copy(train_image, leaky / "test" / "PNEUMONIA" / train_image.name)
+
+    main([str(trained_cnn_path), f"--data-dir={leaky}"])
+    assert "1 patient(s) appear in both train/ and test/" in capsys.readouterr().out
+
+    main([str(trained_cnn_path), f"--data-dir={data_dir}"])
+    assert "appear in both" not in capsys.readouterr().out

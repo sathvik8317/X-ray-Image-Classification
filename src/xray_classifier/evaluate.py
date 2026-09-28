@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score, auc, classification_report, confusion_matrix, roc_curve
 
 from .config import CATEGORIES, DATA_DIR
-from .data import list_images, make_dataset
+from .data import list_images, make_dataset, patient_overlap
 from .plots import plot_confusion_matrix, plot_roc_curve
 
 
@@ -27,8 +27,8 @@ def predict_split(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return (true labels, pneumonia probabilities) for every image in a split folder."""
     img_size, channels = model.input_shape[1], model.input_shape[-1]
-    _, labels = list_images(split_dir)
-    ds = make_dataset(split_dir, img_size, channels, batch_size)
+    paths, labels = list_images(split_dir)
+    ds = make_dataset(paths, labels, img_size, channels, batch_size)
     return labels, model.predict(ds, verbose=0).ravel()
 
 
@@ -63,8 +63,17 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--plots-dir", type=Path, help="save confusion matrix and ROC plots here")
     args = parser.parse_args(argv)
 
+    split_dir = args.data_dir / args.split
+    if args.split != "train" and (args.data_dir / "train").is_dir():
+        shared = patient_overlap(list_images(args.data_dir / "train")[0], list_images(split_dir)[0])
+        if shared:
+            print(
+                f"Warning: {len(shared)} patient(s) appear in both train/ and {args.split}/, "
+                "so these metrics may be optimistic"
+            )
+
     model = keras.models.load_model(args.model_path)
-    metrics = evaluate(model, args.data_dir / args.split, args.threshold)
+    metrics = evaluate(model, split_dir, args.threshold)
     print(f"Accuracy: {metrics.accuracy:.4f}")
     print(f"ROC AUC:  {metrics.roc_auc:.4f}")
     print(metrics.report)
