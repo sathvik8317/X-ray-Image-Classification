@@ -40,3 +40,20 @@ def plot_roc_curve(
     ax.legend(loc="lower right")
     fig.tight_layout()
     return fig
+
+
+def plot_gradcam(image: np.ndarray, heatmap: np.ndarray, title: str = "Grad-CAM") -> Figure:
+    """The X-ray next to the X-ray overlaid with its Grad-CAM heatmap."""
+    fig, axes = plt.subplots(1, 2, figsize=(9, 4.5))
+    gray = image[..., 0]
+    axes[0].imshow(gray, cmap="gray")
+    axes[0].set_title("X-ray")
+    axes[1].imshow(gray, cmap="gray")
+    overlay = axes[1].imshow(heatmap, cmap="jet", alpha=0.4, vmin=0, vmax=1)
+    axes[1].set_title("Grad-CAM")
+    fig.colorbar(overlay, ax=axes[1], fraction=0.046, pad=0.04)
+    for ax in axes:
+        ax.axis("off")
+    fig.suptitle(title)
+    fig.tight_layout()
+    return fig

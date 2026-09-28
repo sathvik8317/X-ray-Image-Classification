@@ -25,3 +25,10 @@ def test_cli_prints_one_line_per_image(data_dir, trained_cnn_path, capsys):
     lines = capsys.readouterr().out.strip().splitlines()
     assert len(lines) == 2
     assert all("pneumonia probability" in line for line in lines)
+
+
+def test_cli_saves_gradcam_heatmaps(data_dir, trained_cnn_path, tmp_path, capsys):
+    image = first_image(data_dir, "test", "PNEUMONIA")
+    main([str(trained_cnn_path), str(image), f"--gradcam={tmp_path / 'cams'}"])
+    assert (tmp_path / "cams" / f"{image.stem}_gradcam.png").exists()
+    assert "saved" in capsys.readouterr().out
