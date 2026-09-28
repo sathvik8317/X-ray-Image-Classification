@@ -57,3 +57,10 @@ def plot_gradcam(image: np.ndarray, heatmap: np.ndarray, title: str = "Grad-CAM"
     fig.suptitle(title)
     fig.tight_layout()
     return fig
+
+
+def gradcam_overlay(image: np.ndarray, heatmap: np.ndarray, alpha: float = 0.4) -> np.ndarray:
+    """RGB uint8 image: the X-ray (first channel) blended with the heatmap in `jet` colors."""
+    gray = np.repeat(image[..., :1], 3, axis=-1)
+    colored = plt.get_cmap("jet")(heatmap)[..., :3]
+    return (np.clip((1 - alpha) * gray + alpha * colored, 0, 1) * 255).astype(np.uint8)

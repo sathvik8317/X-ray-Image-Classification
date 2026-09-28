@@ -19,11 +19,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["jupyter", "ruff", "pre-commit", "nbstripout", "pytest"]
+app = ["gradio>=5"]
 
 [project.scripts]
 xray-train = "xray_classifier.train:main"
 xray-evaluate = "xray_classifier.evaluate:main"
 xray-predict = "xray_classifier.predict:main"
+xray-app = "xray_classifier.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
