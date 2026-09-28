@@ -13,6 +13,7 @@ A Jupyter Notebook project that implements convolutional neural networks (CNNs) 
 
    * [Clone Repository](#clone-repository)
    * [Install Dependencies](#install-dependencies)
+   * [Development Setup](#development-setup)
    * [Download Dataset](#download-dataset)
 5. [Usage](#usage)
 6. [Notebook Outline](#notebook-outline)
@@ -73,17 +74,18 @@ venv\Scripts\activate       # Windows
 pip install -r requirements.txt
 ```
 
-**requirements.txt** should include:
+### Development Setup
 
+For contributors, install the dev tools and enable the git hooks:
+
+```bash
+pip install -r requirements-dev.txt
+pre-commit install
 ```
-opencv-python
-tensorflow
-keras
-numpy
-matplotlib
-scikit-learn
-kaggle
-```
+
+The hooks run [Ruff](https://docs.astral.sh/ruff/) on the notebook, strip execution counts and transient metadata with `nbstripout` (outputs are kept), and block accidentally committed large files. Run them manually with `pre-commit run --all-files`.
+
+Never commit `kaggle.json`, the dataset, or trained model files. They are listed in `.gitignore`.
 
 ### Download Dataset
 
