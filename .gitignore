@@ -1,0 +1,31 @@
+# Kaggle API credentials
+kaggle.json
+
+# Dataset
+data/
+chest_xray/
+*.zip
+
+# Trained models
+*.h5
+*.keras
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+venv/
+.env
+
+# Tooling
+.ruff_cache/
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
