@@ -116,11 +116,30 @@ def make_dataset(
         num_parallel_calls=tf.data.AUTOTUNE,
     ).batch(batch_size)
     if augment:
-        # The notebook's ImageDataGenerator shear_range=0.2 meant 0.2 degrees, effectively a
-        # no-op, so only the zoom augmentation is carried over.
-        zoom = keras.layers.RandomZoom(0.2, seed=seed)
-        ds = ds.map(lambda x, y: (zoom(x, training=True), y), num_parallel_calls=tf.data.AUTOTUNE)
+        augmenter = make_augmenter(seed)
+        ds = ds.map(
+            lambda x, y: (tf.clip_by_value(augmenter(x, training=True), 0.0, 1.0), y),
+            num_parallel_calls=tf.data.AUTOTUNE,
+        )
     return ds.prefetch(tf.data.AUTOTUNE)
+
+
+def make_augmenter(seed: int | None = None) -> keras.Sequential:
+    """Small geometric and exposure changes that a real chest X-ray could plausibly show.
+
+    No horizontal flips: they put the heart on the wrong side, which never happens in the
+    test set and would teach the model to ignore anatomy it should use.
+    """
+    return keras.Sequential(
+        [
+            keras.layers.RandomRotation(10 / 360, fill_mode="constant", seed=seed),
+            keras.layers.RandomTranslation(0.05, 0.05, fill_mode="constant", seed=seed),
+            keras.layers.RandomZoom(0.15, fill_mode="constant", seed=seed),
+            keras.layers.RandomBrightness(0.1, value_range=(0.0, 1.0), seed=seed),
+            keras.layers.RandomContrast(0.2, seed=seed),
+        ],
+        name="augment",
+    )
 
 
 def load_image(path: str | Path, img_size: int = IMG_SIZE, channels: int = 1) -> np.ndarray:

@@ -33,7 +33,8 @@ def make_classifier(model_path: str | Path) -> Callable[[str], tuple[str, np.nda
     return classify
 
 
-def build_demo(model_path: str | Path):
+def build_demo(model_path: str | Path, examples: list[str | Path] | None = None):
+    """Gradio interface; `examples` are image paths shown as one-click samples."""
     import gradio as gr  # optional dependency: pip install -e ".[app]"
 
     return gr.Interface(
@@ -42,6 +43,8 @@ def build_demo(model_path: str | Path):
         outputs=[gr.Textbox(label="Prediction"), gr.Image(label="Grad-CAM")],
         title="Chest X-ray Pneumonia Classifier",
         description=f"Model: {Path(model_path).name}. {DISCLAIMER}",
+        examples=[[str(path)] for path in examples] if examples else None,
+        cache_examples=False,
         flagging_mode="never",
         api_name="predict",
     )
@@ -52,9 +55,10 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("model_path", type=Path)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=7860)
+    parser.add_argument("--examples", type=Path, nargs="*", help="sample images to offer")
     args = parser.parse_args(argv)
     try:
-        demo = build_demo(args.model_path)
+        demo = build_demo(args.model_path, args.examples)
     except ImportError:
         parser.exit(1, 'The demo app needs Gradio: pip install -e ".[app]"\n')
     demo.launch(server_name=args.host, server_port=args.port)

@@ -29,3 +29,7 @@ venv/
 .DS_Store
 .vscode/
 .idea/
+
+# Local outputs
+models/
+space/model.json

@@ -127,7 +127,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--augment",
         action=argparse.BooleanOptionalAction,
-        help="random zoom augmentation (default: off for cnn, on for pretrained models)",
+        help="random rotation, shift, zoom, brightness, and contrast; no flips "
+        "(default: off for cnn, on for pretrained models)",
     )
     parser.add_argument(
         "--val-fraction",

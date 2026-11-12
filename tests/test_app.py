@@ -27,3 +27,11 @@ def test_gradcam_overlay_blends_image_and_heatmap():
 def test_build_demo(trained_cnn_path):
     gr = pytest.importorskip("gradio")
     assert isinstance(build_demo(trained_cnn_path), gr.Interface)
+
+
+def test_build_demo_with_examples(data_dir, trained_cnn_path):
+    gr = pytest.importorskip("gradio")
+    examples = [first_image(data_dir, "test", c) for c in ("NORMAL", "PNEUMONIA")]
+    demo = build_demo(trained_cnn_path, examples)
+    assert isinstance(demo, gr.Interface)
+    assert len(demo.examples) == 2

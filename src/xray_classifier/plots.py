@@ -42,6 +42,34 @@ def plot_roc_curve(
     return fig
 
 
+def plot_reliability_diagram(reliability, ece: float, title: str = "Reliability") -> Figure:
+    """Predicted probability vs. observed pneumonia rate per bin, with bin sizes below.
+
+    `reliability` is an evaluate.Reliability. Points on the diagonal mean the probabilities
+    can be taken at face value; below it the model is overconfident about pneumonia.
+    """
+    fig, (top, bottom) = plt.subplots(
+        2, 1, figsize=(5, 5.5), sharex=True, gridspec_kw={"height_ratios": [3, 1]}
+    )
+    top.plot([0, 1], [0, 1], linestyle="--", color="gray", label="perfect calibration")
+    top.plot(
+        reliability.mean_predicted,
+        reliability.observed_rate,
+        marker="o",
+        label=f"model (ECE = {ece:.3f})",
+    )
+    top.set_ylabel("Observed pneumonia rate")
+    top.set_xlim(0, 1)
+    top.set_ylim(0, 1)
+    top.legend(loc="upper left")
+    top.set_title(title)
+    bottom.bar(reliability.mean_predicted, reliability.counts, width=0.05, color="gray")
+    bottom.set_xlabel("Predicted pneumonia probability")
+    bottom.set_ylabel("Images")
+    fig.tight_layout()
+    return fig
+
+
 def plot_gradcam(image: np.ndarray, heatmap: np.ndarray, title: str = "Grad-CAM") -> Figure:
     """The X-ray next to the X-ray overlaid with its Grad-CAM heatmap."""
     fig, axes = plt.subplots(1, 2, figsize=(9, 4.5))

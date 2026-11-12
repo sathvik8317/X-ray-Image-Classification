@@ -156,10 +156,20 @@ def test_shuffled_dataset_reshuffles_every_epoch(data_dir):
     np.testing.assert_allclose(np.sort(epoch_1.ravel()), np.sort(epoch_2.ravel()))
 
 
-def test_augmented_dataset_keeps_shape(data_dir):
-    ds = _dataset(data_dir, "train", batch_size=4, augment=True, shuffle=True, seed=0)
+@pytest.mark.parametrize("channels", [1, 3])
+def test_augmented_dataset_keeps_shape_and_range(data_dir, channels):
+    ds = _dataset(
+        data_dir, "train", channels=channels, batch_size=4, augment=True, shuffle=True, seed=0
+    )
     images, _ = next(iter(ds))
-    assert images.shape == (4, IMG_SIZE, IMG_SIZE, 1)
+    assert images.shape == (4, IMG_SIZE, IMG_SIZE, channels)
+    assert 0.0 <= float(images.numpy().min()) and float(images.numpy().max()) <= 1.0
+
+
+def test_augmentation_changes_the_images(data_dir):
+    plain = next(iter(_dataset(data_dir, "train", batch_size=N_IMAGES)))[0].numpy()
+    augmented = next(iter(_dataset(data_dir, "train", batch_size=N_IMAGES, augment=True, seed=0)))
+    assert not np.allclose(plain, augmented[0].numpy())
 
 
 @pytest.mark.parametrize("channels", [1, 3])

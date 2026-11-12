@@ -51,7 +51,7 @@ How training works:
 * **Calibrated threshold.** After training, the decision threshold that maximizes sensitivity + specificity on the validation split is saved next to the model as `<model>.json`. Evaluation and prediction use it automatically.
 * **Optional fine-tuning.** For pretrained models, a second phase can unfreeze the backbone's last stage and train it at a low learning rate. The checkpoint is only replaced if fine-tuning improves the validation loss.
 
-Evaluation reports accuracy, **sensitivity** (share of pneumonia cases caught), **specificity** (share of normal cases cleared), ROC AUC, a classification report, and a confusion matrix. **Grad-CAM** heatmaps show which image regions drive a prediction, to check that a model looks at the lungs rather than at shortcuts such as text markers or image borders.
+Evaluation reports accuracy, **sensitivity** (share of pneumonia cases caught), **specificity** (share of normal cases cleared), ROC AUC, a classification report, and a confusion matrix. It also reports **calibration** (Brier score and expected calibration error, with a reliability diagram) and **95% confidence intervals** from a bootstrap that resamples whole patients, so several images of one patient do not count as independent evidence. **Grad-CAM** heatmaps show which image regions drive a prediction, to check that a model looks at the lungs rather than at shortcuts such as text markers or image borders.
 
 ## Project Structure
 
@@ -67,8 +67,11 @@ Evaluation reports accuracy, **sensitivity** (share of pneumonia cases caught), 
 │   ├── evaluate.py    # metrics on a data split (xray-evaluate)
 │   ├── predict.py     # single-image prediction (xray-predict)
 │   ├── gradcam.py     # Grad-CAM heatmaps
-│   ├── plots.py       # training curves, confusion matrix, ROC curve, Grad-CAM figures
+│   ├── plots.py       # training curves, confusion matrix, ROC, reliability, Grad-CAM figures
+│   ├── report.py      # results table and comparison figures for several models (xray-report)
 │   └── app.py         # Gradio web demo (xray-app)
+├── docs/              # results table and figures shown below
+├── space/             # Hugging Face Space entry point and example images
 ├── tests/             # pytest suite, runs on small synthetic datasets
 ├── .github/workflows/ # CI: pre-commit and pytest
 └── pyproject.toml     # package metadata, dependencies, tool config
@@ -158,7 +161,7 @@ xray-train --model efficientnetv2-b0 --fine-tune-epochs 5
 | `--epochs` | 10 | Epochs of the main (frozen-base) phase |
 | `--batch-size` | 4 for `cnn`, 32 otherwise | |
 | `--img-size` | 100 for `cnn`/`vgg16`, 224 otherwise | |
-| `--augment/--no-augment` | off for `cnn`, on otherwise | Random zoom augmentation |
+| `--augment/--no-augment` | off for `cnn`, on otherwise | Small random rotation (±10°), shift (±5%), zoom (±15%), brightness and contrast. No horizontal flips: they would put the heart on the wrong side |
 | `--val-fraction` | 0.15 | Share held out for validation, split by patient; `0` uses the provided 16-image `val/` folder |
 | `--class-weight/--no-class-weight` | on | Balance NORMAL and PNEUMONIA in the loss |
 | `--fine-tune-epochs` | 0 | Extra epochs training the backbone's last stage (pretrained models only) |
@@ -166,10 +169,16 @@ xray-train --model efficientnetv2-b0 --fine-tune-epochs 5
 | `--seed` | none | Seed for shuffling, augmentation, and weight initialization |
 | `--split-seed` | 0 | Seed choosing the validation patients; fixed by default so runs are compared on the same patients |
 
-Evaluate a trained model on the test set, optionally saving the plots. It warns if patients in the evaluated split also appear in `train/`:
+Evaluate a trained model on the test set, optionally saving the plots (confusion matrix, ROC curve, reliability diagram) and the metrics as JSON. It prints 95% confidence intervals from 1,000 patient-level bootstrap resamples (`--bootstrap 0` skips them), and warns if patients in the evaluated split also appear in `train/`:
 
 ```bash
-xray-evaluate models/vgg16.keras --plots-dir reports/
+xray-evaluate models/vgg16.keras --plots-dir reports/ --json reports/vgg16.json
+```
+
+Compare several trained models in one go. This writes the results table (`results.md`, `results.json`), ROC and calibration plots with every model on them, and a Grad-CAM grid of the best model's most confident correct calls and worst mistakes:
+
+```bash
+xray-report models/*.keras --out-dir docs/
 ```
 
 Classify individual images, optionally saving Grad-CAM heatmaps:
@@ -178,7 +187,7 @@ Classify individual images, optionally saving Grad-CAM heatmaps:
 xray-predict models/vgg16.keras path/to/image1.jpeg path/to/image2.jpeg --gradcam reports/gradcam/
 ```
 
-Both use the threshold saved with the model unless `--threshold` is given. Each command is also available as `python -m xray_classifier.<train|evaluate|predict>`.
+Both use the threshold saved with the model unless `--threshold` is given. Each command is also available as `python -m xray_classifier.<train|evaluate|predict|report>`.
 
 ### Notebook
 
@@ -193,6 +202,8 @@ pip install -e ".[app]"
 xray-app models/vgg16.keras          # then open http://127.0.0.1:7860
 ```
 
+`--examples img1.jpeg img2.jpeg` adds one-click sample images. The `space/` folder runs the same demo on [Hugging Face Spaces](https://huggingface.co/spaces): copy a trained model into it as `model.keras` with its threshold as `model.json`, and upload the folder's contents to a Gradio Space. Its `requirements.txt` installs this package from GitHub.
+
 ### Configuration
 
 Paths default to `data/chest_xray` for the dataset and `models/` for checkpoints. Override them with environment variables, for example to point at a mounted Google Drive folder:
@@ -204,14 +215,30 @@ export XRAY_MODELS_DIR=/content/drive/MyDrive/models
 
 ## Results
 
-Recorded from the original Colab run of the notebook (10 epochs):
+All four models on the 624-image test set (234 NORMAL, 390 PNEUMONIA), which was not used for training, threshold choice, or model selection. Trained on a Kaggle T4 GPU with `--seed 42` and default options, plus 5 fine-tuning epochs for EfficientNetV2-B0 and ConvNeXt-Tiny (37 minutes for all four). Brackets are 95% confidence intervals from 1,000 patient-level bootstrap resamples.
 
-| Model | Validation accuracy (16 images) | Test accuracy (624 images) |
-| --- | --- | --- |
-| Custom CNN | 81.3% | 74.7% |
-| VGG16 transfer learning | 68.8% | 85.9% |
+| Model | Sensitivity % | Specificity % | Accuracy % | ROC AUC | ECE | Threshold |
+| --- | --- | --- | --- | --- | --- | --- |
+| cnn | 97.9 (96.5-99.3) | 59.8 (53.6-65.9) | 83.7 (80.2-86.5) | 0.935 (0.911-0.955) | 0.188 | 0.777 |
+| vgg16 | 97.2 (95.4-98.7) | 67.9 (61.9-74.8) | 86.2 (83.2-89.2) | 0.947 (0.929-0.964) | 0.092 | 0.274 |
+| **efficientnetv2-b0** | **97.9 (96.4-99.2)** | **76.9 (70.8-82.6)** | **90.1 (87.1-92.5)** | **0.974 (0.960-0.985)** | **0.077** | 0.480 |
+| convnext-tiny | 98.2 (96.8-99.5) | 65.0 (58.4-71.6) | 85.7 (82.5-88.8) | 0.954 (0.937-0.969) | 0.101 | 0.389 |
 
-These numbers predate the current training setup: the patient-grouped validation split, class weights, threshold calibration, callbacks, and two model fixes (a missing ReLU in the custom CNN, and missing ImageNet preprocessing for VGG16). They also report accuracy only, which hides the trade-off between catching pneumonia and clearing healthy patients on this imbalanced test set. Rerun training to get current numbers, including sensitivity, specificity, and ROC AUC from `xray-evaluate`.
+<p align="center">
+  <img src="docs/roc_comparison.png" width="48%" alt="ROC curves of the four models on the test set">
+  <img src="docs/reliability_comparison.png" width="48%" alt="Reliability diagram of the four models on the test set">
+</p>
+
+What the numbers show:
+
+* **EfficientNetV2-B0 is the best model.** It catches 382 of 390 pneumonia cases and clears 180 of 234 healthy patients. The original notebook's best test accuracy was 85.9% (VGG16); it is now 90.1%.
+* **Pneumonia is easy to catch; clearing healthy patients is hard.** Every model misses at most 11 pneumonia cases but wrongly flags 54 to 94 normal X-rays.
+* **Validation scores overstate test performance.** On the patient-grouped validation split, every model reaches 96-99% specificity with a calibration error of 0.02-0.05. On the test set, specificity falls to 60-77% and the calibration error rises to 0.08-0.19. The validation split is drawn from the same pool as training, while `test/` appears to have been collected differently. So the threshold chosen on validation is too low for the test set, and every reliability curve sits below the diagonal: the models are overconfident about pneumonia.
+* **Grad-CAM shows signs of shortcut learning.** For the most confident correct NORMAL call, the heatmap covers the neck and the top edge of the image, not the lungs; for the worst missed pneumonia case it sits below the diaphragm. Correct pneumonia calls do look at the lung fields.
+
+![Grad-CAM on the most confident correct calls and the worst mistakes of EfficientNetV2-B0](docs/gradcam_examples.png)
+
+To reproduce, train each model with `--seed 42` (adding `--fine-tune-epochs 5` for `efficientnetv2-b0` and `convnext-tiny`), then run `xray-report models/{cnn,vgg16,efficientnetv2-b0,convnext-tiny}.keras --out-dir docs/`. GPU nondeterminism means the numbers can differ slightly between runs.
 
 ## Testing
 
