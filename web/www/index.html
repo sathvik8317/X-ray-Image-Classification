@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>X-ray Pneumonia Check</title>
+<meta name="description" content="Chest X-ray pneumonia classifier with a heatmap, running fully in your browser (Rust + WebAssembly).">
+<style>
+  :root {
+    --bg: #fafafa; --surface: #ffffff; --text: #18181b; --muted: #71717a;
+    --line: #e4e4e7; --accent: #2563eb; --accent-soft: #eff6ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f0f11; --surface: #18181b; --text: #f4f4f5; --muted: #a1a1aa;
+      --line: #2e2e33; --accent: #60a5fa; --accent-soft: #172033;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+  @media (max-width: 680px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  #drop {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 220px; border: 1.5px dashed var(--line); border-radius: 10px; text-align: center;
+    cursor: pointer; color: var(--muted); padding: 16px; transition: border-color .15s, background .15s;
+  }
+  #drop.over, #drop:hover { border-color: var(--accent); background: var(--accent-soft); }
+  #drop strong { color: var(--text); }
+  .label { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 8px; }
+  .examples { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .examples button { padding: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; cursor: pointer; background: none; }
+  .examples button:focus-visible, .examples button:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .examples img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; filter: grayscale(1); }
+  canvas { width: 100%; aspect-ratio: 1; border-radius: 6px; background: var(--line); display: block; }
+  .verdict { display: flex; align-items: baseline; justify-content: space-between; margin-top: 14px; }
+  .verdict b { font-size: 22px; }
+  .verdict span { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; margin-top: 8px; position: relative; overflow: hidden; }
+  .bar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); width: 0; transition: width .3s; }
+  .bar u { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text); }
+  #status { color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 20px; }
+  .note { color: var(--muted); font-size: 13px; margin-top: 28px; border-top: 1px solid var(--line); padding-top: 16px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>X-ray pneumonia check</h1>
+  <p class="sub">EfficientNetV2-B0 with a heatmap of where it looked. Runs entirely in your browser in Rust + WebAssembly. Your image is never uploaded.</p>
+
+  <div class="grid">
+    <section class="card">
+      <label id="drop" tabindex="0">
+        <input id="file" type="file" accept="image/jpeg,image/png" hidden>
+        <strong>Drop a chest X-ray</strong>
+        <span>or click to choose a JPEG or PNG</span>
+      </label>
+      <div class="label">Or try a test-set image</div>
+      <div class="examples" id="examples"></div>
+    </section>
+
+    <section class="card">
+      <canvas id="out" width="384" height="384" aria-label="X-ray with heatmap overlay"></canvas>
+      <div class="verdict"><b id="verdict">–</b><span id="prob"></span></div>
+      <div class="bar" title="Pneumonia probability; the dark tick is the decision threshold"><i id="fill"></i><u id="tick"></u></div>
+      <div id="status">Loading model…</div>
+    </section>
+  </div>
+
+  <p class="note">
+    <b>Research demo, not a medical device.</b> Trained on pediatric X-rays from one hospital (Kaggle Chest X-Ray Pneumonia).
+    On its test set: 97.9% sensitivity, 76.9% specificity, AUC 0.974. It over-calls pneumonia and shows signs of shortcut learning.
+    Red areas in the heatmap pushed the model toward its answer.
+    <a href="https://github.com/sathvik8317/X-ray-Image-Classification">Code and results</a>
+  </p>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

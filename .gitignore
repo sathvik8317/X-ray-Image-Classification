@@ -33,3 +33,11 @@ venv/
 # Local outputs
 models/
 space/model.json
+
+# Browser demo build outputs (web/build.sh)
+web/target/
+web/www/xray_wasm.wasm
+web/www/model/
+web/www/examples/
+web/fixtures/
+web/model/

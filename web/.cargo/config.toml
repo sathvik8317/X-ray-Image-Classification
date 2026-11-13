@@ -1,0 +1,4 @@
+# No JS glue in this build, so getrandom gets a stub (see src/ffi.rs). The model has no
+# random ops, so nothing calls it.
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="custom"']

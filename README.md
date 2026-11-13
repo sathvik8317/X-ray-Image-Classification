@@ -22,6 +22,7 @@ Convolutional neural networks (CNNs) that classify chest X‑ray images as **Nor
    * [Command Line](#command-line)
    * [Notebook](#notebook)
    * [Demo App](#demo-app)
+   * [Browser Demo](#browser-demo)
    * [Configuration](#configuration)
 6. [Results](#results)
 7. [Testing](#testing)
@@ -69,7 +70,10 @@ Evaluation reports accuracy, **sensitivity** (share of pneumonia cases caught), 
 │   ├── gradcam.py     # Grad-CAM heatmaps
 │   ├── plots.py       # training curves, confusion matrix, ROC, reliability, Grad-CAM figures
 │   ├── report.py      # results table and comparison figures for several models (xray-report)
+│   ├── spectral.py    # spectral ablation: AUC on low-/high-pass filtered images (xray-spectral)
+│   ├── export.py      # ONNX export with a class-activation-map output (xray-export)
 │   └── app.py         # Gradio web demo (xray-app)
+├── web/               # in-browser demo: Rust + tract compiled to WebAssembly, static page
 ├── docs/              # results table and figures shown below
 ├── space/             # Hugging Face Space entry point and example images
 ├── tests/             # pytest suite, runs on small synthetic datasets
@@ -187,7 +191,22 @@ Classify individual images, optionally saving Grad-CAM heatmaps:
 xray-predict models/vgg16.keras path/to/image1.jpeg path/to/image2.jpeg --gradcam reports/gradcam/
 ```
 
-Both use the threshold saved with the model unless `--threshold` is given. Each command is also available as `python -m xray_classifier.<train|evaluate|predict|report>`.
+Both use the threshold saved with the model unless `--threshold` is given.
+
+Check which spatial frequencies a model relies on (see [Spectral ablation](#spectral-ablation-which-frequencies-do-the-models-read)):
+
+```bash
+xray-spectral models/efficientnetv2-b0.keras --out-dir docs/
+```
+
+Export a model to ONNX for the browser demo, with a second output holding its class activation map (see [Browser Demo](#browser-demo)):
+
+```bash
+pip install -e ".[onnx]"
+xray-export models/efficientnetv2-b0.keras --out web/model/efficientnetv2-b0.onnx
+```
+
+Each command is also available as `python -m xray_classifier.<train|evaluate|predict|report|spectral|export>`.
 
 ### Notebook
 
@@ -203,6 +222,22 @@ xray-app models/vgg16.keras          # then open http://127.0.0.1:7860
 ```
 
 `--examples img1.jpeg img2.jpeg` adds one-click sample images. The `space/` folder runs the same demo on [Hugging Face Spaces](https://huggingface.co/spaces): copy a trained model into it as `model.keras` with its threshold as `model.json`, and upload the folder's contents to a Gradio Space. Its `requirements.txt` installs this package from GitHub.
+
+### Browser Demo
+
+`web/` runs EfficientNetV2-B0 and its heatmap **entirely in the browser**: a Rust crate compiles [tract](https://github.com/sonos/tract) (an ONNX runtime written in Rust) to WebAssembly, so there is no server and the X-ray never leaves the device. It is a static site, so it can be hosted for free on a static Hugging Face Space, GitHub Pages or any file host.
+
+* **Heatmap without gradients.** `xray-export` adds a second output to the ONNX model: the last feature map projected onto the output layer's weights. For a global-average-pooling + single dense layer head, that projection *is* Grad-CAM (every channel's gradient is its weight divided by the map's area). So the browser computes the same heatmap as `xray-predict --gradcam` without any autodiff.
+* **Same numbers as Python.** The crate copies `tf.image.resize` (bilinear, half-pixel centers) and matplotlib's `jet` colormap, and a parity test checks its probabilities and maps against Keras on real test images.
+* **No JavaScript glue generator.** The wasm module has zero imports and exports a small C ABI (`alloc`, `load`, `classify`, getters); `web/www/worker.js` is all the glue, and inference runs in a Web Worker.
+
+```bash
+xray-export models/efficientnetv2-b0.keras --out web/model/efficientnetv2-b0.onnx
+web/build.sh web/model/efficientnetv2-b0.onnx     # needs Rust with the wasm32-unknown-unknown target
+python -m http.server -d web/www                  # then open http://127.0.0.1:8000
+```
+
+Rust tests (unit + parity) run natively with `cargo test`, or under Node's WASI on machines that can't run native test binaries: `cargo test --target wasm32-wasip1 --no-run && node tools/run-wasi-tests.mjs` (from `web/`). The parity test reads `web/fixtures/` (the exported model, its `*_reference.json` and the referenced test images) and is skipped when they are missing.
 
 ### Configuration
 
@@ -237,6 +272,21 @@ What the numbers show:
 * **Grad-CAM shows signs of shortcut learning.** For the most confident correct NORMAL call, the heatmap covers the neck and the top edge of the image, not the lungs; for the worst missed pneumonia case it sits below the diaphragm. Correct pneumonia calls do look at the lung fields.
 
 ![Grad-CAM on the most confident correct calls and the worst mistakes of EfficientNetV2-B0](docs/gradcam_examples.png)
+
+### Spectral ablation: which frequencies do the models read?
+
+Each test image is Fourier-filtered to keep only its low frequencies (a blurred X-ray: lung shapes and opacities) or only its high frequencies (fine edges, texture, noise), and ROC AUC is measured again. AUC is used because it does not depend on the decision threshold, which filtering shifts.
+
+![ROC AUC of the four models on low-pass and high-pass filtered test images](docs/spectral_comparison.png)
+
+![One test X-ray under each filter](docs/spectral_examples.png)
+
+* **The pretrained models read pneumonia from texture a human cannot see.** With a high-pass cutoff of 1.0 the X-ray is a flat grey field with faint edges (bottom right above), yet EfficientNetV2-B0 still scores **AUC 0.80** and VGG16 0.76. The custom CNN, trained from scratch on 100-pixel images, falls to chance (0.47) on the same images.
+* That signal is most likely in how the images were acquired or compressed (scanner noise, sharpening, JPEG artefacts) rather than in the lungs, since NORMAL and PNEUMONIA images in this dataset were not collected identically. Together with the Grad-CAM heatmaps on the neck and image edges, it is further evidence of shortcut learning, and a likely reason the models over-call pneumonia on the differently collected `test/` set.
+* **Coarse structure carries real signal too.** Blurred down to a 5%-of-Nyquist low-pass, where only the outline of the lungs and dense opacities remain, EfficientNetV2-B0 keeps AUC 0.86.
+* On an almost featureless blur (low-pass 0.02), EfficientNetV2-B0 drops to 0.36, below chance. Its predictions on such images are driven by something systematically reversed, probably overall brightness or image size, not by pathology.
+
+Reproduce with `xray-spectral models/<model>.keras --out-dir docs/` for each model (a minute per model on a T4), then `xray-spectral --compare docs/*_spectral.json --out-dir docs/`.
 
 To reproduce, train each model with `--seed 42` (adding `--fine-tune-epochs 5` for `efficientnetv2-b0` and `convnext-tiny`), then run `xray-report models/{cnn,vgg16,efficientnetv2-b0,convnext-tiny}.keras --out-dir docs/`. GPU nondeterminism means the numbers can differ slightly between runs.
 
