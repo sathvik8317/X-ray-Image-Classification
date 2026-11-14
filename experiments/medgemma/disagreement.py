@@ -160,6 +160,8 @@ def main() -> None:
             },
             indent=2,
         )
+        + "
+"
     )
 
 
