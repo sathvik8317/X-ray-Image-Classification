@@ -118,7 +118,7 @@ def main() -> None:
     processor = AutoProcessor.from_pretrained(args.model_dir)
     # T4s have no bfloat16 and Gemma 3 overflows in float16, so use float32 over both GPUs.
     model = AutoModelForImageTextToText.from_pretrained(
-        args.model_dir, torch_dtype=torch.float32, device_map="auto"
+        args.model_dir, dtype=torch.float32, device_map="auto"
     ).eval()
     yes, no = answer_token_ids(processor, ("yes",)), answer_token_ids(processor, ("no",))
 

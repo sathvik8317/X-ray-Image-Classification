@@ -73,6 +73,7 @@ Evaluation reports accuracy, **sensitivity** (share of pneumonia cases caught), 
 │   ├── spectral.py    # spectral ablation: AUC on low-/high-pass filtered images (xray-spectral)
 │   ├── export.py      # ONNX export with a class-activation-map output (xray-export)
 │   └── app.py         # Gradio web demo (xray-app)
+├── experiments/       # one-off studies (CNN vs. MedGemma)
 ├── web/               # in-browser demo: Rust + tract compiled to WebAssembly, static page
 ├── docs/              # results table and figures shown below
 ├── space/             # Hugging Face Space entry point and example images
@@ -287,6 +288,24 @@ Each test image is Fourier-filtered to keep only its low frequencies (a blurred 
 * On an almost featureless blur (low-pass 0.02), EfficientNetV2-B0 drops to 0.36, below chance. Its predictions on such images are driven by something systematically reversed, probably overall brightness or image size, not by pathology.
 
 Reproduce with `xray-spectral models/<model>.keras --out-dir docs/` for each model (a minute per model on a T4), then `xray-spectral --compare docs/*_spectral.json --out-dir docs/`.
+
+### CNN vs. MedGemma: is disagreement a useful warning sign?
+
+The question: when the CNN and a very different model disagree, is the CNN more likely to be wrong? If so, disagreement could flag X-rays for a human, with no labels needed. The second model is [MedGemma 4B](https://huggingface.co/google/medgemma-4b-it), Google's medical vision-language model, used zero-shot. Its pneumonia probability is read straight from the logits of its first answer token to "Is there radiographic evidence of pneumonia? Answer yes or no", so there is no text parsing (`experiments/medgemma/`).
+
+| On the 624 test images | Result |
+| --- | --- |
+| MedGemma ROC AUC, zero-shot | 0.876 (CNN: 0.974) |
+| MedGemma at a 0.5 cutoff | 34.9% sensitivity, 96.6% specificity: it rarely says yes |
+| Average of the two models' ranks (AUC) | 0.970, no better than the CNN alone |
+| **Detecting the CNN's 62 errors (AUC)** | **CNN's own uncertainty 0.84; disagreement with MedGemma 0.51 (chance)** |
+| Errors caught when flagging the 20% most suspicious images | own uncertainty 46/62; disagreement 12/62 |
+
+* **A negative result.** Disagreement with MedGemma does not point at the CNN's mistakes, and adding it to the CNN's own uncertainty makes error detection worse (AUC 0.76). The cheap signal, how close the CNN's probability is to its threshold, is far better.
+* **MedGemma contradicts itself.** For 6 of the 8 strongest disagreements (all true pneumonia), its findings describe "increased opacity ... potentially representing consolidation" and then conclude "No pneumonia". It was trained mostly on adult X-rays, and on these pediatric images its yes/no answer is biased toward "no" even when its own description is not.
+* It does rank 43 of the CNN's 54 false-positive normals in its lower half, so it holds some complementary information about healthy X-rays, but not enough to separate the CNN's errors from its correct calls.
+
+Raw probabilities and findings: `docs/medgemma_results.json`. Reproduce on a Kaggle T4 x2 (about 35 minutes) with `experiments/medgemma/cnn_probs.py` then `disagreement.py`; it needs a Hugging Face token with access to the gated MedGemma weights.
 
 To reproduce, train each model with `--seed 42` (adding `--fine-tune-epochs 5` for `efficientnetv2-b0` and `convnext-tiny`), then run `xray-report models/{cnn,vgg16,efficientnetv2-b0,convnext-tiny}.keras --out-dir docs/`. GPU nondeterminism means the numbers can differ slightly between runs.
 
