@@ -88,7 +88,7 @@ def summarize(y: np.ndarray, cnn: np.ndarray, vlm: np.ndarray, cnn_t: float) -> 
         return float(correct[mask].mean()) if mask.any() else float("nan")
 
     return {
-        "n": int(len(y)),
+        "n": len(y),
         "auc_cnn": float(roc_auc_score(y, cnn)),
         "auc_medgemma": float(roc_auc_score(y, vlm)),
         "auc_average": float(roc_auc_score(y, (cnn + vlm) / 2)),
@@ -160,8 +160,7 @@ def main() -> None:
             },
             indent=2,
         )
-        + "
-"
+        + "\n"
     )
 
 
