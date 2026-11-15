@@ -226,6 +226,8 @@ xray-app models/vgg16.keras          # then open http://127.0.0.1:7860
 
 ### Browser Demo
 
+**Live:** [sathvik8317/xray-pneumonia-wasm](https://huggingface.co/spaces/sathvik8317/xray-pneumonia-wasm) (free static Hugging Face Space, about 40 MB to download once).
+
 `web/` runs EfficientNetV2-B0 and its heatmap **entirely in the browser**: a Rust crate compiles [tract](https://github.com/sonos/tract) (an ONNX runtime written in Rust) to WebAssembly, so there is no server and the X-ray never leaves the device. It is a static site, so it can be hosted for free on a static Hugging Face Space, GitHub Pages or any file host.
 
 * **Heatmap without gradients.** `xray-export` adds a second output to the ONNX model: the last feature map projected onto the output layer's weights. For a global-average-pooling + single dense layer head, that projection *is* Grad-CAM (every channel's gradient is its weight divided by the map's area). So the browser computes the same heatmap as `xray-predict --gradcam` without any autodiff.
